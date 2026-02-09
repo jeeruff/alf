@@ -1,3 +1,25 @@
 #!/bin/sh
-# alf — audio lf. lf with waveform preview.
-exec lf -config "$HOME/.config/lf/alf-rc" "$@"
+# alf — audio lf. lf with waveform preview + ueberzug for images.
+set -e
+
+UB_PID=""
+
+cleanup() {
+    exec 3>&- 2>/dev/null
+    [ -n "$UB_PID" ] && kill "$UB_PID" 2>/dev/null
+    rm -f "$FIFO_UEBERZUG"
+    kill 0 2>/dev/null
+}
+
+if [ -n "$SSH_CLIENT" ] || [ -n "$SSH_TTY" ]; then
+    lf -config "$HOME/.config/lf/alf-rc" "$@"
+else
+    [ ! -d "$HOME/.cache/lf" ] && mkdir -p "$HOME/.cache/lf"
+    export FIFO_UEBERZUG="$HOME/.cache/lf/ueberzug-$$"
+    mkfifo "$FIFO_UEBERZUG"
+    ueberzug layer -s <"$FIFO_UEBERZUG" -p json &
+    UB_PID=$!
+    exec 3>"$FIFO_UEBERZUG"
+    trap cleanup HUP INT QUIT TERM PWR EXIT
+    lf -config "$HOME/.config/lf/alf-rc" "$@" 3>&-
+fi
