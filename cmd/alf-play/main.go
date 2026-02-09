@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -82,17 +83,38 @@ func setAutoplay(on bool) {
 	}
 }
 
-// parsePos extracts percent position from mpc status
+func parseTime(s string) float64 {
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) == 2 {
+		m, _ := strconv.ParseFloat(parts[0], 64)
+		sec, _ := strconv.ParseFloat(parts[1], 64)
+		return m*60 + sec
+	}
+	f, _ := strconv.ParseFloat(s, 64)
+	return f
+}
+
+// parsePos extracts fractional position from mpc status elapsed/total time
 func parsePos() float64 {
-	out, err := mpc("status", "%percenttime%")
+	out, err := mpc("status")
 	if err != nil {
 		return -1
 	}
-	s := strings.TrimSpace(out)
-	s = strings.TrimSuffix(s, "%")
-	s = strings.TrimSpace(s)
-	if pct, err := strconv.Atoi(s); err == nil {
-		return float64(pct) / 100.0
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.HasPrefix(line, "[") {
+			continue
+		}
+		// "[playing] #1/1   0:05/0:30 (16%)"
+		for _, field := range strings.Fields(line) {
+			if strings.Count(field, "/") == 1 && strings.Contains(field, ":") {
+				times := strings.SplitN(field, "/", 2)
+				elapsed := parseTime(times[0])
+				total := parseTime(times[1])
+				if total > 0 {
+					return elapsed / total
+				}
+			}
+		}
 	}
 	return -1
 }
@@ -113,17 +135,19 @@ func play(filepath string, lfID string) {
 	mpc("add", "file://"+abs)
 	mpc("play")
 
-	// refresh loop
+	// refresh loop — only reload when position changes visibly
+	var lastPos float64 = -1
 	for {
 		if !isPlaying() && !isPaused() {
 			break
 		}
 		pos := parsePos()
-		if pos >= 0 {
+		if pos >= 0 && (lastPos < 0 || math.Abs(pos-lastPos) >= 0.005) {
 			os.WriteFile(posFile, []byte(fmt.Sprintf("%.4f", pos)), 0644)
 			exec.Command("lf", "-remote", fmt.Sprintf("send %s reload", lfID)).Run()
+			lastPos = pos
 		}
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	// cleanup
