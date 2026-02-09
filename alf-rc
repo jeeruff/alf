@@ -12,7 +12,6 @@ cmd alf-play ${{
 cmd alf-stop ${{
     alf-play stop
     lf -remote "send $id reload"
-    lf -remote "send $id echo \"stopped\""
 }}
 
 cmd alf-autoplay ${{
@@ -25,16 +24,15 @@ cmd alf-autoplay ${{
 cmd alf-index ${{
     alf-index "$(dirname "$f")"
     lf -remote "send $id reload"
-    lf -remote "send $id echo \"index done\""
+    lf -remote "send $id echo \"indexed\""
 }}
 
 cmd alf-index-bg &{{
     alf-index "$(dirname "$f")" >/dev/null 2>&1
     lf -remote "send $id reload"
-    lf -remote "send $id echo \"index done\""
 }}
 
-# --- sparkline on select + autoplay ---
+# --- autoplay on select ---
 
 cmd on-select &{{
     prev=""
@@ -50,12 +48,9 @@ cmd on-select &{{
                 alf-play stop
                 lf -remote "send $id reload"
             fi
-            spark=$(aw -1 -w 40 "$f" 2>/dev/null)
-            lf -remote "send $id echo \"$spark\""
             ;;
         *)
             [ -n "$prev" ] && alf-play stop && lf -remote "send $id reload"
-            lf -remote "send $id echo \"\""
             ;;
     esac
 }}

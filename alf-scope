@@ -1,5 +1,5 @@
 #!/bin/sh
-# alf scope — waveform for audio (with playback progress), sparkline list for dirs
+# alf scope — combo view for audio (sparkline list + waveform), fallback for the rest
 set -C -f
 
 file="$1"
@@ -17,17 +17,14 @@ fi
 case "$(file --dereference --brief --mime-type -- "$file")" in
     audio/*)
         pos_arg=""
-        state_file="/tmp/alf/file"
-        pos_file="/tmp/alf/pos"
-        if [ -f "$state_file" ] && [ -f "$pos_file" ]; then
-            playing="$(cat "$state_file")"
+        if [ -f /tmp/alf/file ] && [ -f /tmp/alf/pos ]; then
+            playing="$(cat /tmp/alf/file)"
             real="$(readlink -f "$file")"
             if [ "$playing" = "$real" ]; then
-                pos="$(cat "$pos_file")"
-                pos_arg="-p $pos"
+                pos_arg="-p $(cat /tmp/alf/pos)"
             fi
         fi
-        aw -w "$w" -H "$((h - 2))" $pos_arg "$file"
+        aw -c -w "$w" -H "$h" $pos_arg "$file"
         ;;
     *)
         if [ -x "$HOME/.config/lf/scope" ]; then

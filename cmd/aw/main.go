@@ -336,11 +336,116 @@ func renderDir(dirpath string, width, maxfiles int) string {
 	return sb.String()
 }
 
+const (
+	SEL   = "\033[1;33m"  // bold yellow — selected file
+	UNSEL = "\033[38;5;245m" // gray — other files
+)
+
+// renderCombo: sparkline list (top, scrolled) + waveform (bottom)
+func renderCombo(path string, width, totalHeight int, pos float64) string {
+	dirpath := filepath.Dir(path)
+	current := filepath.Base(path)
+
+	// list audio files
+	entries, _ := os.ReadDir(dirpath)
+	var files []string
+	for _, e := range entries {
+		if !e.IsDir() && audioExt[strings.ToLower(filepath.Ext(e.Name()))] {
+			files = append(files, e.Name())
+		}
+	}
+	sort.Strings(files)
+
+	// find current index
+	curIdx := 0
+	for i, f := range files {
+		if f == current {
+			curIdx = i
+			break
+		}
+	}
+
+	dcache := readDirCache(dirpath)
+
+	// layout: waveform gets 4 lines + 1 header + 1 separator = 6
+	// sparkline list gets the rest
+	wavH := 3
+	listH := totalHeight - wavH - 3 // -header -separator -spacer
+	if listH < 3 {
+		listH = 3
+	}
+
+	sparkW := width - 24
+	if sparkW < 12 {
+		sparkW = 12
+	}
+	if sparkW > 30 {
+		sparkW = 30
+	}
+	nameW := width - sparkW - 14
+
+	// scroll window: keep current file centered
+	startIdx := curIdx - listH/2
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	if startIdx+listH > len(files) {
+		startIdx = len(files) - listH
+	}
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	endIdx := startIdx + listH
+	if endIdx > len(files) {
+		endIdx = len(files)
+	}
+
+	var sb strings.Builder
+
+	// render sparkline list
+	for _, f := range files[startIdx:endIdx] {
+		fpath := filepath.Join(dirpath, f)
+		spark, _, dur := renderSparkline(fpath, sparkW)
+		name := f
+		if len(name) > nameW {
+			name = name[:nameW]
+		}
+		pad := nameW - len(name)
+		if pad < 0 {
+			pad = 0
+		}
+
+		bpmStr := ""
+		if m, ok := dcache[f]; ok && m.BPM != "" {
+			bpmStr = fmt.Sprintf("%3s", m.BPM)
+		} else {
+			bpmStr = "   "
+		}
+
+		if f == current {
+			sb.WriteString(fmt.Sprintf("%s> %s%s %s %s %s%s\n",
+				SEL, name, strings.Repeat(" ", pad), spark, fmtDur(dur), bpmStr, RST))
+		} else {
+			sb.WriteString(fmt.Sprintf("%s  %s%s %s %s %s%s\n",
+				UNSEL, name, strings.Repeat(" ", pad), spark, fmtDur(dur), bpmStr, RST))
+		}
+	}
+
+	// separator
+	sb.WriteString(strings.Repeat("─", width) + "\n")
+
+	// compact waveform of current file
+	sb.WriteString(renderFull(path, width, wavH, pos))
+
+	return sb.String()
+}
+
 func main() {
 	width := flag.Int("w", 80, "width")
 	height := flag.Int("H", 5, "height")
 	oneline := flag.Bool("1", false, "sparkline mode")
 	dir := flag.Bool("d", false, "directory listing")
+	combo := flag.Bool("c", false, "combo: sparkline list + waveform")
 	pos := flag.Float64("p", -1, "playback position 0.0-1.0")
 	flag.Parse()
 
@@ -357,11 +462,13 @@ func main() {
 	}
 
 	if *dir || fi.IsDir() {
-		fmt.Println(renderDir(path, *width, 50))
+		fmt.Print(renderDir(path, *width, 50))
+	} else if *combo {
+		fmt.Print(renderCombo(path, *width, *height, *pos))
 	} else if *oneline {
 		spark, meta, dur := renderSparkline(path, *width)
 		fmt.Printf("%s  %s  %s\n", spark, fmtDur(dur), meta)
 	} else {
-		fmt.Println(renderFull(path, *width, *height, *pos))
+		fmt.Print(renderFull(path, *width, *height, *pos))
 	}
 }
