@@ -1,18 +1,53 @@
-# alf — lf + audio waveform. Full lf, audio features on top.
+# alf — lf + audio waveform + playback. Full lf, audio features on top.
 source "~/.config/lf/lfrc"
 
-# override previewer to show waveforms for audio
 set previewer '~/.config/lf/alf-scope'
 
-# sparkline on select in echo line
+# --- playback commands ---
+
+cmd alf-play ${{
+    alf-play pause "$f" "$id"
+}}
+
+cmd alf-stop ${{
+    alf-play stop
+    lf -remote "send $id reload"
+    lf -remote "send $id echo \"stopped\""
+}}
+
+cmd alf-autoplay ${{
+    state=$(alf-play autoplay toggle)
+    lf -remote "send $id echo \"$state\""
+}}
+
+# sparkline on select + autoplay
 cmd on-select &{{
+    # stop previous playback on file change
+    prev=""
+    [ -f /tmp/alf/file ] && prev="$(cat /tmp/alf/file)"
+    real="$(readlink -f "$f" 2>/dev/null)"
+
     case "$(file --dereference --brief --mime-type -- "$f" 2>/dev/null)" in
         audio/*)
+            # autoplay: if enabled and different file, play
+            if [ -f /tmp/alf/autoplay ] && [ "$prev" != "$real" ]; then
+                alf-play stop
+                alf-play play "$f" "$id"
+            elif [ "$prev" != "$real" ] && [ -n "$prev" ]; then
+                alf-play stop
+                lf -remote "send $id reload"
+            fi
             spark=$(aw -1 -w 40 "$f" 2>/dev/null)
             lf -remote "send $id echo \"$spark\""
             ;;
         *)
+            [ -n "$prev" ] && alf-play stop && lf -remote "send $id reload"
             lf -remote "send $id echo \"\""
             ;;
     esac
 }}
+
+# --- bindings (alt-key, no lf conflicts) ---
+map <a-p> alf-play
+map <a-s> alf-stop
+map <a-a> alf-autoplay
