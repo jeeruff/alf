@@ -60,7 +60,7 @@ func cacheFile(dirpath string) string {
 }
 
 type cacheMeta struct {
-	BPM, Pitch, Dur, Ch, Rate, Bits string
+	BPM, Pitch, Dur, Ch, Rate, Bits, Spark string
 }
 
 func readCache(dirpath string) map[string]cacheMeta {
@@ -75,10 +75,14 @@ func readCache(dirpath string) map[string]cacheMeta {
 	records, _ := r.ReadAll()
 	for _, rec := range records {
 		if len(rec) >= 7 {
-			cache[rec[0]] = cacheMeta{
+			m := cacheMeta{
 				BPM: rec[1], Pitch: rec[2], Dur: rec[3],
 				Ch: rec[4], Rate: rec[5], Bits: rec[6],
 			}
+			if len(rec) >= 8 {
+				m.Spark = rec[7]
+			}
+			cache[rec[0]] = m
 		}
 	}
 	return cache
@@ -204,19 +208,24 @@ func main() {
 			sz = fi.Size()
 		}
 
-		spark := miniSparkline(fpath, *sparkW)
-
 		var bpm int
 		var dur float64
 		var key string
 		var pitch float64
 		var info string
+		var spark string
 		if m, ok := cache[e.Name()]; ok {
 			bpm, _ = strconv.Atoi(m.BPM)
 			dur = parseDur(m.Dur)
 			key = hzToNote(m.Pitch)
 			pitch, _ = strconv.ParseFloat(m.Pitch, 64)
 			info = fmt.Sprintf("%sb %sHz %sch", m.Bits, m.Rate, m.Ch)
+			if m.Spark != "" && len([]rune(m.Spark)) == *sparkW {
+				spark = m.Spark
+			}
+		}
+		if spark == "" {
+			spark = miniSparkline(fpath, *sparkW)
 		}
 
 		entries = append(entries, entry{

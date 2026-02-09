@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/csv"
 	"fmt"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"sync"
 )
+
+var blocks = []rune("▁▂▃▄▅▆▇█")
 
 var audioExt = map[string]bool{
 	".wav": true, ".mp3": true, ".flac": true, ".ogg": true,
@@ -26,6 +29,7 @@ type Meta struct {
 	Channels string
 	Rate     string
 	Bits     string
+	Spark    string
 }
 
 func cacheDir() string {
@@ -54,10 +58,14 @@ func readCache(dirpath string) map[string]Meta {
 	records, _ := r.ReadAll()
 	for _, rec := range records {
 		if len(rec) >= 7 {
-			cache[rec[0]] = Meta{
+			m := Meta{
 				File: rec[0], BPM: rec[1], Pitch: rec[2],
 				Duration: rec[3], Channels: rec[4], Rate: rec[5], Bits: rec[6],
 			}
+			if len(rec) >= 8 {
+				m.Spark = rec[7]
+			}
+			cache[rec[0]] = m
 		}
 	}
 	return cache
@@ -73,7 +81,7 @@ func writeCache(dirpath string, metas []Meta) error {
 	w := csv.NewWriter(f)
 	w.Comma = '\t'
 	for _, m := range metas {
-		w.Write([]string{m.File, m.BPM, m.Pitch, m.Duration, m.Channels, m.Rate, m.Bits})
+		w.Write([]string{m.File, m.BPM, m.Pitch, m.Duration, m.Channels, m.Rate, m.Bits, m.Spark})
 	}
 	w.Flush()
 	return nil
@@ -157,14 +165,59 @@ func getSoxInfo(path string) (dur, ch, rate, bits string) {
 	return
 }
 
+func miniSparkline(path string, width int) string {
+	cmd := exec.Command("sox", path, "-c", "1", "-r", "8000", "-b", "16",
+		"-e", "signed-integer", "-t", "raw", "-")
+	raw, err := cmd.Output()
+	if err != nil || len(raw) < 2 {
+		return strings.Repeat(string(blocks[0]), width)
+	}
+	n := len(raw) / 2
+	samples := make([]int16, n)
+	for i := range n {
+		samples[i] = int16(binary.LittleEndian.Uint16(raw[i*2 : i*2+2]))
+	}
+	peaks := make([]int16, width)
+	for i := range width {
+		s := i * n / width
+		e := (i + 1) * n / width
+		var mx int16
+		for _, v := range samples[s:e] {
+			if v < 0 {
+				v = -v
+			}
+			if v > mx {
+				mx = v
+			}
+		}
+		peaks[i] = mx
+	}
+	var maxP int16
+	for _, p := range peaks {
+		if p > maxP {
+			maxP = p
+		}
+	}
+	if maxP == 0 {
+		maxP = 1
+	}
+	var sb strings.Builder
+	for _, p := range peaks {
+		lvl := float64(p) / float64(maxP)
+		sb.WriteRune(blocks[int(lvl*float64(len(blocks)-1))])
+	}
+	return sb.String()
+}
+
 func indexFile(dirpath, name string) Meta {
 	path := filepath.Join(dirpath, name)
 	dur, ch, rate, bits := getSoxInfo(path)
 	bpm := detectBPM(path)
 	pitch := detectPitch(path)
+	spark := miniSparkline(path, 10)
 	return Meta{
 		File: name, BPM: bpm, Pitch: pitch,
-		Duration: dur, Channels: ch, Rate: rate, Bits: bits,
+		Duration: dur, Channels: ch, Rate: rate, Bits: bits, Spark: spark,
 	}
 }
 

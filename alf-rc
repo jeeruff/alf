@@ -2,6 +2,7 @@
 source "~/.config/lf/lfrc"
 
 set previewer '~/.config/lf/alf-scope'
+set info size:time:custom
 
 # --- playback (mpd via mpc) ---
 
@@ -30,6 +31,23 @@ cmd alf-index ${{
 cmd alf-index-bg &{{
     alf-index "$(dirname "$f")" >/dev/null 2>&1
     lf -remote "send $id reload"
+}}
+
+# --- seek ---
+
+cmd alf-seek-fwd ${{
+    alf-play seek +5
+}}
+
+cmd alf-seek-bwd ${{
+    alf-play seek -5
+}}
+
+# --- custom columns (on-load populates miniwave + bpm + key) ---
+
+cmd on-load &{{
+    cmds=$(alf-meta "$@")
+    [ -n "$cmds" ] && lf -remote "send $id :$cmds"
 }}
 
 # --- fzf browser (sortable columns + sparklines) ---
@@ -68,3 +86,5 @@ map <a-o> alf-autoplay
 map <a-i> alf-index
 map <a-I> alf-index-bg
 map <a-f> alf-fzf
+map <lt> alf-seek-bwd
+map > alf-seek-fwd

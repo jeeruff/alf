@@ -82,25 +82,17 @@ func setAutoplay(on bool) {
 	}
 }
 
-// parseStatus extracts percent position from mpc status
+// parsePos extracts percent position from mpc status
 func parsePos() float64 {
 	out, err := mpc("status", "%percenttime%")
 	if err != nil {
 		return -1
 	}
-	// mpc status with format gives just the number
-	// fallback: parse from regular status
-	lines := strings.Split(out, "\n")
-	for _, line := range lines {
-		// look for (NN%) pattern
-		if i := strings.Index(line, "("); i >= 0 {
-			if j := strings.Index(line[i:], "%)"); j >= 0 {
-				pctStr := line[i+1 : i+j]
-				if pct, err := strconv.Atoi(pctStr); err == nil {
-					return float64(pct) / 100.0
-				}
-			}
-		}
+	s := strings.TrimSpace(out)
+	s = strings.TrimSuffix(s, "%")
+	s = strings.TrimSpace(s)
+	if pct, err := strconv.Atoi(s); err == nil {
+		return float64(pct) / 100.0
 	}
 	return -1
 }
@@ -181,6 +173,11 @@ func main() {
 			mpc("toggle")
 		} else if len(os.Args) >= 4 {
 			daemonize(func() { play(os.Args[2], os.Args[3]) })
+		}
+
+	case "seek":
+		if len(os.Args) >= 3 {
+			mpc("seek", os.Args[2])
 		}
 
 	case "autoplay":
