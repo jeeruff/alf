@@ -15,7 +15,10 @@ install: build
 	install -Dm755 alf-index $(PREFIX)/bin/alf-index
 	install -Dm755 alf-list $(PREFIX)/bin/alf-list
 	install -Dm755 alf $(PREFIX)/bin/alf
-	@echo "installed: aw, alf-play, alf-index, alf-list, alf"
+	install -Dm755 alf-fzf $(PREFIX)/bin/alf-fzf
+	install -Dm644 alf-rc $(LFCONF)/alf-rc
+	install -Dm755 alf-scope $(LFCONF)/alf-scope
+	@echo "installed: aw, alf-play, alf-index, alf-list, alf, alf-fzf, alf-rc, alf-scope"
 
 clean:
 	rm -f aw alf-play alf-index alf-list

@@ -32,6 +32,12 @@ cmd alf-index-bg &{{
     lf -remote "send $id reload"
 }}
 
+# --- fzf browser (sortable columns + sparklines) ---
+
+cmd alf-fzf ${{
+    alf-fzf "$(dirname "$f")"
+}}
+
 # --- autoplay on select ---
 
 cmd on-select &{{
@@ -61,3 +67,4 @@ map <a-s> alf-stop
 map <a-a> alf-autoplay
 map <a-i> alf-index
 map <a-I> alf-index-bg
+map <a-f> alf-fzf
