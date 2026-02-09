@@ -25,7 +25,7 @@ cmd alf-autoplay ${{
 cmd alf-visual ${{
     alf-play stop
     mpv --really-quiet --vo=sixel \
-        --lavfi-complex="[aid1]showwaves=mode=cline:s=1280x480:rate=25:colors=0x66bb6a[vo]" \
+        --lavfi-complex="[aid1]asplit[ao][a1];[a1]showwaves=mode=cline:s=1280x480:rate=25:colors=0x66bb6a[vo]" \
         "$f"
 }}
 
