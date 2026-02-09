@@ -1,25 +1,33 @@
 #!/bin/sh
-# alf — audio lf. lf with waveform preview + ueberzug for images.
+# alf — audio file browser. fzf + waveform preview + mpd playback.
 set -e
 
-UB_PID=""
+DIR="${1:-.}"
+DIR="$(readlink -f "$DIR")"
+SORT="${ALF_SORT:-name}"
 
-cleanup() {
-    exec 3>&- 2>/dev/null
-    [ -n "$UB_PID" ] && kill "$UB_PID" 2>/dev/null
-    rm -f "$FIFO_UEBERZUG"
-    kill 0 2>/dev/null
-}
+# preview: full waveform. field 5+ is the filename
+preview_cmd="aw -w \$FZF_PREVIEW_COLUMNS -H \$FZF_PREVIEW_LINES \$(echo {} | awk '{print \"$DIR/\"\$5}')"
 
-if [ -n "$SSH_CLIENT" ] || [ -n "$SSH_TTY" ]; then
-    lf -config "$HOME/.config/lf/alf-rc" "$@"
-else
-    [ ! -d "$HOME/.cache/lf" ] && mkdir -p "$HOME/.cache/lf"
-    export FIFO_UEBERZUG="$HOME/.cache/lf/ueberzug-$$"
-    mkfifo "$FIFO_UEBERZUG"
-    ueberzug layer -s <"$FIFO_UEBERZUG" -p json &
-    UB_PID=$!
-    exec 3>"$FIFO_UEBERZUG"
-    trap cleanup HUP INT QUIT TERM PWR EXIT
-    lf -config "$HOME/.config/lf/alf-rc" "$@" 3>&-
-fi
+# play: extract filename from last field
+play_cmd="alf-play pause \"$DIR/\$(echo {} | awk '{print \$5}')\" 0"
+stop_cmd="alf-play stop"
+
+alf-list --sort "$SORT" "$DIR" | fzf \
+    --ansi \
+    --no-sort \
+    --layout=reverse \
+    --header=" wave      bpm    dur   size  name   │ a-p:play a-s:stop a-n/b/d:sort a-i:index a-a:autoplay" \
+    --preview "$preview_cmd" \
+    --preview-window "right:50%:wrap" \
+    --bind "alt-p:execute-silent($play_cmd)" \
+    --bind "alt-s:execute-silent($stop_cmd)" \
+    --bind "alt-n:reload(alf-list --sort name \"$DIR\")" \
+    --bind "alt-b:reload(alf-list --sort bpm \"$DIR\")" \
+    --bind "alt-d:reload(alf-list --sort dur \"$DIR\")" \
+    --bind "alt-z:reload(alf-list --sort size \"$DIR\")" \
+    --bind "alt-i:execute-silent(alf-index \"$DIR\")+reload(alf-list --sort $SORT \"$DIR\")" \
+    --bind "alt-a:execute-silent(alf-play autoplay toggle)" \
+    --bind "enter:execute-silent($play_cmd)" \
+    --bind "esc:execute-silent($stop_cmd)+abort" \
+    --multi
