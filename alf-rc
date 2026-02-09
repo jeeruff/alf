@@ -1,9 +1,9 @@
-# alf — lf + audio waveform + playback. Full lf, audio features on top.
+# alf — lf + audio waveform + mpd playback + aubio index.
 source "~/.config/lf/lfrc"
 
 set previewer '~/.config/lf/alf-scope'
 
-# --- playback commands ---
+# --- playback (mpd via mpc) ---
 
 cmd alf-play ${{
     alf-play pause "$f" "$id"
@@ -20,16 +20,29 @@ cmd alf-autoplay ${{
     lf -remote "send $id echo \"$state\""
 }}
 
-# sparkline on select + autoplay
+# --- indexing (aubio) ---
+
+cmd alf-index ${{
+    alf-index "$(dirname "$f")"
+    lf -remote "send $id reload"
+    lf -remote "send $id echo \"index done\""
+}}
+
+cmd alf-index-bg &{{
+    alf-index "$(dirname "$f")" >/dev/null 2>&1
+    lf -remote "send $id reload"
+    lf -remote "send $id echo \"index done\""
+}}
+
+# --- sparkline on select + autoplay ---
+
 cmd on-select &{{
-    # stop previous playback on file change
     prev=""
     [ -f /tmp/alf/file ] && prev="$(cat /tmp/alf/file)"
     real="$(readlink -f "$f" 2>/dev/null)"
 
     case "$(file --dereference --brief --mime-type -- "$f" 2>/dev/null)" in
         audio/*)
-            # autoplay: if enabled and different file, play
             if [ -f /tmp/alf/autoplay ] && [ "$prev" != "$real" ]; then
                 alf-play stop
                 alf-play play "$f" "$id"
@@ -51,3 +64,5 @@ cmd on-select &{{
 map <a-p> alf-play
 map <a-s> alf-stop
 map <a-a> alf-autoplay
+map <a-i> alf-index
+map <a-I> alf-index-bg

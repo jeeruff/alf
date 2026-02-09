@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/csv"
 	"flag"
 	"fmt"
 	"os"
@@ -115,6 +117,57 @@ func fmtDur(s float64) string {
 	return fmt.Sprintf("%d:%04.1f", m, sec)
 }
 
+type cacheMeta struct {
+	BPM, Pitch string
+}
+
+func cacheFile(dirpath string) string {
+	dir := os.Getenv("XDG_CACHE_HOME")
+	if dir == "" {
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, ".cache")
+	}
+	h := sha256.Sum256([]byte(dirpath))
+	return filepath.Join(dir, "alf", fmt.Sprintf("%x.tsv", h[:8]))
+}
+
+func readCacheMeta(path string) cacheMeta {
+	dirpath := filepath.Dir(path)
+	name := filepath.Base(path)
+	f, err := os.Open(cacheFile(dirpath))
+	if err != nil {
+		return cacheMeta{}
+	}
+	defer f.Close()
+	r := csv.NewReader(f)
+	r.Comma = '\t'
+	records, _ := r.ReadAll()
+	for _, rec := range records {
+		if len(rec) >= 3 && rec[0] == name {
+			return cacheMeta{BPM: rec[1], Pitch: rec[2]}
+		}
+	}
+	return cacheMeta{}
+}
+
+func readDirCache(dirpath string) map[string]cacheMeta {
+	cache := make(map[string]cacheMeta)
+	f, err := os.Open(cacheFile(dirpath))
+	if err != nil {
+		return cache
+	}
+	defer f.Close()
+	r := csv.NewReader(f)
+	r.Comma = '\t'
+	records, _ := r.ReadAll()
+	for _, rec := range records {
+		if len(rec) >= 3 {
+			cache[rec[0]] = cacheMeta{BPM: rec[1], Pitch: rec[2]}
+		}
+	}
+	return cache
+}
+
 func renderFull(path string, width, height int, pos float64) string {
 	samples := decode(path)
 	if samples == nil {
@@ -138,14 +191,25 @@ func renderFull(path string, width, height int, pos float64) string {
 
 	var sb strings.Builder
 	info := getInfo(path)
+	cmeta := readCacheMeta(path)
 	name := filepath.Base(path)
+
+	// build tag string from cache
+	tags := ""
+	if cmeta.BPM != "" {
+		tags += "  " + cmeta.BPM + "bpm"
+	}
+	if cmeta.Pitch != "" {
+		tags += "  ~" + cmeta.Pitch + "Hz"
+	}
+
 	if pos >= 0 {
 		cur := info.dur * pos
-		sb.WriteString(fmt.Sprintf("  %s  %sb %sHz %sch  [%s / %s]\n",
-			name, info.bits, info.sr, info.ch, fmtDur(cur), fmtDur(info.dur)))
+		sb.WriteString(fmt.Sprintf("  %s  %sb %sHz %sch  [%s / %s]%s\n",
+			name, info.bits, info.sr, info.ch, fmtDur(cur), fmtDur(info.dur), tags))
 	} else {
-		sb.WriteString(fmt.Sprintf("  %s  %sb %sHz %sch  [%s]\n",
-			name, info.bits, info.sr, info.ch, fmtDur(info.dur)))
+		sb.WriteString(fmt.Sprintf("  %s  %sb %sHz %sch  [%s]%s\n",
+			name, info.bits, info.sr, info.ch, fmtDur(info.dur), tags))
 	}
 
 	for row := height - 1; row >= 0; row-- {
@@ -239,6 +303,8 @@ func renderDir(dirpath string, width, maxfiles int) string {
 	}
 	nameW := width - sparkW - 16
 
+	dcache := readDirCache(dirpath)
+
 	var sb strings.Builder
 	limit := len(files)
 	if limit > maxfiles {
@@ -255,7 +321,11 @@ func renderDir(dirpath string, width, maxfiles int) string {
 		if pad < 0 {
 			pad = 0
 		}
-		sb.WriteString(fmt.Sprintf("  %s%s %s %7s", name, strings.Repeat(" ", pad), spark, fmtDur(dur)))
+		bpm := ""
+		if m, ok := dcache[f]; ok && m.BPM != "" {
+			bpm = fmt.Sprintf(" %3sbpm", m.BPM)
+		}
+		sb.WriteString(fmt.Sprintf("  %s%s %s %7s%s", name, strings.Repeat(" ", pad), spark, fmtDur(dur), bpm))
 		if i < limit-1 {
 			sb.WriteByte('\n')
 		}

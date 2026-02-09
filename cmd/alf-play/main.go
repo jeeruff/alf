@@ -1,75 +1,71 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
 const stateDir = "/tmp/alf"
 
 var (
-	mpvSocket    = filepath.Join(stateDir, "mpv")
 	pidFile      = filepath.Join(stateDir, "pid")
 	posFile      = filepath.Join(stateDir, "pos")
 	fileFile     = filepath.Join(stateDir, "file")
 	autoplayFile = filepath.Join(stateDir, "autoplay")
 )
 
-func ensureDir() {
-	os.MkdirAll(stateDir, 0755)
+func mpdHost() string {
+	h := os.Getenv("MPD_HOST")
+	if h != "" {
+		return h
+	}
+	home, _ := os.UserHomeDir()
+	sock := filepath.Join(home, ".config/mpd/socket")
+	if _, err := os.Stat(sock); err == nil {
+		return sock
+	}
+	return "127.0.0.1"
 }
 
-func mpvCmd(cmd []any) any {
-	conn, err := net.DialTimeout("unix", mpvSocket, 500*time.Millisecond)
-	if err != nil {
-		return nil
-	}
-	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(500 * time.Millisecond))
-
-	msg := map[string]any{"command": cmd}
-	data, _ := json.Marshal(msg)
-	data = append(data, '\n')
-	conn.Write(data)
-
-	buf := make([]byte, 4096)
-	n, err := conn.Read(buf)
-	if err != nil {
-		return nil
-	}
-	var resp map[string]any
-	json.Unmarshal(buf[:n], &resp)
-	return resp["data"]
+func mpc(args ...string) (string, error) {
+	cmd := exec.Command("mpc", args...)
+	cmd.Env = append(os.Environ(), "MPD_HOST="+mpdHost())
+	out, err := cmd.Output()
+	return strings.TrimSpace(string(out)), err
 }
+
+func ensureDir() { os.MkdirAll(stateDir, 0755) }
 
 func stopCurrent() {
-	// kill daemon
+	// kill refresh daemon
 	if data, err := os.ReadFile(pidFile); err == nil {
-		if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
-			if pid != os.Getpid() {
-				syscall.Kill(pid, syscall.SIGTERM)
+		if pid, _ := strconv.Atoi(strings.TrimSpace(string(data))); pid > 0 && pid != os.Getpid() {
+			proc, _ := os.FindProcess(pid)
+			if proc != nil {
+				proc.Signal(os.Interrupt)
 			}
 		}
 	}
-	// quit mpv
-	mpvCmd([]any{"quit"})
-	time.Sleep(50 * time.Millisecond)
-	// clean state
+	mpc("stop")
+	mpc("clear")
 	for _, f := range []string{posFile, fileFile, pidFile} {
 		os.Remove(f)
 	}
 }
 
 func isPlaying() bool {
-	return mpvCmd([]any{"get_property", "pid"}) != nil
+	out, _ := mpc("status")
+	return strings.Contains(out, "[playing]")
+}
+
+func isPaused() bool {
+	out, _ := mpc("status")
+	return strings.Contains(out, "[paused]")
 }
 
 func getAutoplay() bool {
@@ -86,64 +82,57 @@ func setAutoplay(on bool) {
 	}
 }
 
+// parseStatus extracts percent position from mpc status
+func parsePos() float64 {
+	out, err := mpc("status", "%percenttime%")
+	if err != nil {
+		return -1
+	}
+	// mpc status with format gives just the number
+	// fallback: parse from regular status
+	lines := strings.Split(out, "\n")
+	for _, line := range lines {
+		// look for (NN%) pattern
+		if i := strings.Index(line, "("); i >= 0 {
+			if j := strings.Index(line[i:], "%)"); j >= 0 {
+				pctStr := line[i+1 : i+j]
+				if pct, err := strconv.Atoi(pctStr); err == nil {
+					return float64(pct) / 100.0
+				}
+			}
+		}
+	}
+	return -1
+}
+
 func play(filepath string, lfID string) {
 	ensureDir()
 	stopCurrent()
 
-	// write PID
 	os.WriteFile(pidFile, []byte(strconv.Itoa(os.Getpid())), 0644)
 
-	// resolve path
-	abs, err := realpath(filepath)
+	abs, err := absPath(filepath)
 	if err != nil {
 		abs = filepath
 	}
 	os.WriteFile(fileFile, []byte(abs), 0644)
 
-	// remove stale socket
-	os.Remove(mpvSocket)
+	mpc("clear")
+	mpc("add", "file://"+abs)
+	mpc("play")
 
-	// start mpv
-	cmd := exec.Command("mpv", "--no-terminal", "--no-video",
-		"--input-ipc-server="+mpvSocket, abs)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	if err := cmd.Start(); err != nil {
-		return
-	}
-
-	// wait for socket
-	for range 30 {
-		if _, err := os.Stat(mpvSocket); err == nil {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-
-	// monitor loop
+	// refresh loop
 	for {
-		if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+		if !isPlaying() && !isPaused() {
 			break
 		}
-		// check if process still alive
-		if cmd.Process != nil {
-			if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
-				break
-			}
-		}
-
-		pct := mpvCmd([]any{"get_property", "percent-pos"})
-		if pct != nil {
-			if v, ok := pct.(float64); ok {
-				os.WriteFile(posFile, []byte(fmt.Sprintf("%.4f", v/100)), 0644)
-				exec.Command("lf", "-remote", fmt.Sprintf("send %s reload", lfID)).Run()
-			}
+		pos := parsePos()
+		if pos >= 0 {
+			os.WriteFile(posFile, []byte(fmt.Sprintf("%.4f", pos)), 0644)
+			exec.Command("lf", "-remote", fmt.Sprintf("send %s reload", lfID)).Run()
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-
-	// wait for process to finish
-	cmd.Wait()
 
 	// cleanup
 	for _, f := range []string{posFile, fileFile, pidFile} {
@@ -152,19 +141,22 @@ func play(filepath string, lfID string) {
 	exec.Command("lf", "-remote", fmt.Sprintf("send %s reload", lfID)).Run()
 }
 
-func realpath(path string) (string, error) {
-	return os.Readlink(path)
+func absPath(path string) (string, error) {
+	out, err := exec.Command("readlink", "-f", path).Output()
+	if err != nil {
+		return path, err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func daemonize(fn func()) {
-	// double fork
 	if os.Getenv("_ALF_DAEMON") == "1" {
 		fn()
 		return
 	}
-	os.Setenv("_ALF_DAEMON", "1")
+	env := append(os.Environ(), "_ALF_DAEMON=1")
 	cmd := exec.Command(os.Args[0], os.Args[1:]...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Env = env
 	cmd.Start()
 }
 
@@ -179,20 +171,16 @@ func main() {
 		if len(os.Args) < 4 {
 			os.Exit(1)
 		}
-		daemonize(func() {
-			play(os.Args[2], os.Args[3])
-		})
+		daemonize(func() { play(os.Args[2], os.Args[3]) })
 
 	case "stop":
 		stopCurrent()
 
 	case "pause":
-		if isPlaying() {
-			mpvCmd([]any{"cycle", "pause"})
+		if isPlaying() || isPaused() {
+			mpc("toggle")
 		} else if len(os.Args) >= 4 {
-			daemonize(func() {
-				play(os.Args[2], os.Args[3])
-			})
+			daemonize(func() { play(os.Args[2], os.Args[3]) })
 		}
 
 	case "autoplay":
