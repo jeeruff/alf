@@ -1,0 +1,30 @@
+#!/bin/sh
+# alf scope — waveform for audio, sparkline list for dirs, fallback for the rest
+set -C -f
+
+file="$1"
+w="$2"
+h="$3"
+
+if [ -d "$file" ]; then
+    # directory: check if it has audio files
+    has_audio=$(find "$file" -maxdepth 1 -type f \( -iname '*.wav' -o -iname '*.mp3' -o -iname '*.flac' -o -iname '*.ogg' -o -iname '*.aif' -o -iname '*.aiff' -o -iname '*.opus' -o -iname '*.m4a' \) 2>/dev/null | head -1)
+    if [ -n "$has_audio" ]; then
+        aw -d -w "$w" "$file"
+        exit 0
+    fi
+fi
+
+case "$(file --dereference --brief --mime-type -- "$file")" in
+    audio/*)
+        aw -w "$w" -H "$((h - 2))" "$file"
+        ;;
+    *)
+        # fallback to default lf scope
+        if [ -x "$HOME/.config/lf/scope" ]; then
+            exec "$HOME/.config/lf/scope" "$@"
+        else
+            file --brief "$file"
+        fi
+        ;;
+esac

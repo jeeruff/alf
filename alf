@@ -1,0 +1,3 @@
+#!/bin/sh
+# alf — audio lf. lf with waveform preview.
+exec lf -config "$HOME/.config/lf/alf-rc" "$@"

@@ -1,0 +1,18 @@
+# alf — lf + audio waveform. Full lf, audio features on top.
+source "~/.config/lf/lfrc"
+
+# override previewer to show waveforms for audio
+set previewer '~/.config/lf/alf-scope'
+
+# sparkline on select in echo line
+cmd on-select &{{
+    case "$(file --dereference --brief --mime-type -- "$f" 2>/dev/null)" in
+        audio/*)
+            spark=$(aw -1 -w 40 "$f" 2>/dev/null)
+            lf -remote "send $id echo \"$spark\""
+            ;;
+        *)
+            lf -remote "send $id echo \"\""
+            ;;
+    esac
+}}
