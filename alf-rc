@@ -2,22 +2,41 @@
 source "~/.config/lf/lfrc"
 
 set previewer '~/.config/lf/alf-scope'
+set sixel true
 set info size:time:custom
 
 # --- playback (mpd via mpc) ---
 
 cmd alf-play ${{
-    alf-play pause "$f" "$id"
+    alf-play pause "$f"
 }}
 
 cmd alf-stop ${{
     alf-play stop
-    lf -remote "send $id reload"
 }}
 
 cmd alf-autoplay ${{
     state=$(alf-play autoplay toggle)
     lf -remote "send $id echo \"$state\""
+}}
+
+# --- visual playback (mpv + sixel waveform) ---
+
+cmd alf-visual ${{
+    alf-play stop
+    mpv --really-quiet --vo=sixel \
+        --lavfi-complex="[aid1]showwaves=mode=cline:s=1280x480:rate=25:colors=0x66bb6a[vo]" \
+        "$f"
+}}
+
+# --- seek ---
+
+cmd alf-seek-fwd ${{
+    alf-play seek +5
+}}
+
+cmd alf-seek-bwd ${{
+    alf-play seek -5
 }}
 
 # --- indexing (aubio) ---
@@ -31,16 +50,6 @@ cmd alf-index ${{
 cmd alf-index-bg &{{
     alf-index "$(dirname "$f")" >/dev/null 2>&1
     lf -remote "send $id reload"
-}}
-
-# --- seek ---
-
-cmd alf-seek-fwd ${{
-    alf-play seek +5
-}}
-
-cmd alf-seek-bwd ${{
-    alf-play seek -5
 }}
 
 # --- custom columns (on-load populates miniwave + bpm + key) ---
@@ -67,20 +76,20 @@ cmd on-select &{{
         audio/*)
             if [ -f /tmp/alf/autoplay ] && [ "$prev" != "$real" ]; then
                 alf-play stop
-                alf-play play "$f" "$id"
+                alf-play play "$f"
             elif [ "$prev" != "$real" ] && [ -n "$prev" ]; then
                 alf-play stop
-                lf -remote "send $id reload"
             fi
             ;;
         *)
-            [ -n "$prev" ] && alf-play stop && lf -remote "send $id reload"
+            [ -n "$prev" ] && alf-play stop
             ;;
     esac
 }}
 
 # --- bindings (alt-key, no lf conflicts) ---
 map <a-p> alf-play
+map <a-v> alf-visual
 map <a-x> alf-stop
 map <a-o> alf-autoplay
 map <a-i> alf-index

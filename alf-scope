@@ -1,5 +1,5 @@
 #!/bin/sh
-# alf scope — waveform for audio, dir sparklines, fallback for the rest
+# alf scope — sixel waveform for audio, dir columns, fallback for the rest
 set -C -f
 
 file="$1"
@@ -16,15 +16,13 @@ fi
 
 case "$(file --dereference --brief --mime-type -- "$file")" in
     audio/*)
-        pos_arg=""
-        if [ -f /tmp/alf/file ] && [ -f /tmp/alf/pos ]; then
-            playing="$(cat /tmp/alf/file)"
-            real="$(readlink -f "$file")"
-            if [ "$playing" = "$real" ]; then
-                pos_arg="-p $(cat /tmp/alf/pos)"
-            fi
-        fi
-        aw -w "$w" -H 10 $pos_arg "$file"
+        # sixel waveform via ffmpeg + img2sixel (st-sx)
+        pw=$((w * 8))
+        ph=$((h * 14))
+        ffmpeg -i "$file" -filter_complex \
+            "showwavepic=s=${pw}x${ph}:colors=#66bb6a|#1a1a1a:split_channels=0" \
+            -frames:v 1 -f image2pipe -vcodec png - 2>/dev/null \
+            | img2sixel -w "$pw"
         ;;
     *)
         if [ -x "$HOME/.config/lf/scope" ]; then
