@@ -14,14 +14,15 @@ alf-list --sort "$SORT" "$DIR" | fzf \
     --ansi \
     --no-sort \
     --layout=reverse \
-    --header=" wave                 bpm    dur   size  name   │ a-p:play a-s:stop a-n/b/d/z:sort a-i:index" \
+    --header=" wave                 bpm  key    dur   size  name   │ a-p:play a-x:stop a-n/b/d/k/z:sort a-i:index" \
     --preview "$preview_cmd" \
     --preview-window "right:50%:wrap" \
     --bind "alt-p:execute-silent($play_cmd)" \
-    --bind "alt-s:execute-silent($stop_cmd)" \
+    --bind "alt-x:execute-silent($stop_cmd)" \
     --bind "alt-n:reload(alf-list --sort name \"$DIR\")" \
     --bind "alt-b:reload(alf-list --sort bpm \"$DIR\")" \
     --bind "alt-d:reload(alf-list --sort dur \"$DIR\")" \
+    --bind "alt-k:reload(alf-list --sort key \"$DIR\")" \
     --bind "alt-z:reload(alf-list --sort size \"$DIR\")" \
     --bind "alt-i:execute-silent(alf-index \"$DIR\")+reload(alf-list --sort $SORT \"$DIR\")" \
     --bind "enter:execute-silent($play_cmd)" \

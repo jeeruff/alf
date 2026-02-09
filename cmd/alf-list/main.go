@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,21 @@ import (
 	"strconv"
 	"strings"
 )
+
+var noteNames = []string{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}
+
+func hzToNote(hzStr string) string {
+	hz, err := strconv.ParseFloat(hzStr, 64)
+	if err != nil || hz <= 20 {
+		return ""
+	}
+	midi := 69.0 + 12.0*math.Log2(hz/440.0)
+	note := int(math.Round(midi))
+	if note < 0 || note > 127 {
+		return ""
+	}
+	return fmt.Sprintf("%s%d", noteNames[note%12], note/12-1)
+}
 
 var blocks = []rune("▁▂▃▄▅▆▇█")
 
@@ -26,6 +42,8 @@ type entry struct {
 	name  string
 	spark string
 	bpm   int
+	key   string
+	pitch float64
 	dur   float64
 	size  int64
 	info  string // "24b 48000Hz 2ch"
@@ -147,7 +165,7 @@ func parseDur(s string) float64 {
 }
 
 func main() {
-	sortBy := flag.String("sort", "name", "sort by: name, bpm, dur, size")
+	sortBy := flag.String("sort", "name", "sort by: name, bpm, key, dur, size")
 	sparkW := flag.Int("spark", 20, "sparkline width")
 	flag.Parse()
 
@@ -190,10 +208,14 @@ func main() {
 
 		var bpm int
 		var dur float64
+		var key string
+		var pitch float64
 		var info string
 		if m, ok := cache[e.Name()]; ok {
 			bpm, _ = strconv.Atoi(m.BPM)
 			dur = parseDur(m.Dur)
+			key = hzToNote(m.Pitch)
+			pitch, _ = strconv.ParseFloat(m.Pitch, 64)
 			info = fmt.Sprintf("%sb %sHz %sch", m.Bits, m.Rate, m.Ch)
 		}
 
@@ -201,6 +223,8 @@ func main() {
 			name:  e.Name(),
 			spark: spark,
 			bpm:   bpm,
+			key:   key,
+			pitch: pitch,
 			dur:   dur,
 			size:  sz,
 			info:  info,
@@ -211,6 +235,8 @@ func main() {
 	switch *sortBy {
 	case "bpm":
 		sort.Slice(entries, func(i, j int) bool { return entries[i].bpm < entries[j].bpm })
+	case "key":
+		sort.Slice(entries, func(i, j int) bool { return entries[i].pitch < entries[j].pitch })
 	case "dur":
 		sort.Slice(entries, func(i, j int) bool { return entries[i].dur < entries[j].dur })
 	case "size":
@@ -219,15 +245,15 @@ func main() {
 		sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
 	}
 
-	// output: sparkline | bpm | dur | size | name
+	// output: sparkline | bpm | key | dur | size | name
 	for _, e := range entries {
 		bpmStr := "   "
 		if e.bpm > 0 {
 			bpmStr = fmt.Sprintf("%3d", e.bpm)
 		}
+		keyStr := fmt.Sprintf("%-3s", e.key)
 		durStr := fmt.Sprintf("%7s", fmtDur(e.dur))
 		sizeStr := fmt.Sprintf("%5s", fmtSize(e.size))
-		// tab-separated for easy parsing, name last for fzf {-1}
-		fmt.Printf("%s  %s  %s  %s  %s\n", e.spark, bpmStr, durStr, sizeStr, e.name)
+		fmt.Printf("%s  %s  %s  %s  %s  %s\n", e.spark, bpmStr, keyStr, durStr, sizeStr, e.name)
 	}
 }

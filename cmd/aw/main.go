@@ -6,12 +6,29 @@ import (
 	"encoding/csv"
 	"flag"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
+
+var noteNames = []string{"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}
+
+func hzToNote(hzStr string) string {
+	hz, err := strconv.ParseFloat(hzStr, 64)
+	if err != nil || hz <= 20 {
+		return ""
+	}
+	midi := 69.0 + 12.0*math.Log2(hz/440.0)
+	note := int(math.Round(midi))
+	if note < 0 || note > 127 {
+		return ""
+	}
+	return fmt.Sprintf("%s%d", noteNames[note%12], note/12-1)
+}
 
 var blocks = []rune("▁▂▃▄▅▆▇█")
 
@@ -200,7 +217,9 @@ func renderFull(path string, width, height int, pos float64) string {
 		tags += "  " + cmeta.BPM + "bpm"
 	}
 	if cmeta.Pitch != "" {
-		tags += "  ~" + cmeta.Pitch + "Hz"
+		if note := hzToNote(cmeta.Pitch); note != "" {
+			tags += "  " + note
+		}
 	}
 
 	if pos >= 0 {

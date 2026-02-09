@@ -63,8 +63,8 @@ cmd on-select &{{
 
 # --- bindings (alt-key, no lf conflicts) ---
 map <a-p> alf-play
-map <a-s> alf-stop
-map <a-a> alf-autoplay
+map <a-x> alf-stop
+map <a-o> alf-autoplay
 map <a-i> alf-index
 map <a-I> alf-index-bg
 map <a-f> alf-fzf
